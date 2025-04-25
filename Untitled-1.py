@@ -1,0 +1,1 @@
+print("Funcionário cadastrado com sucesso!")
