@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SGS - Sistema de Gerenciamento de Serviço</title>
+    <style>
+        :root {
+            --primary: #1a2a3a; --ala-a: #d32f2f; --ala-b: #388e3c;
+            --ala-c: #fbc02d; --ala-d: #7b1fa2; --bg: #f0f2f5;
+        }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 20px; }
+        .container { max-width: 1100px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .search-panel { background: var(--primary); color: white; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
+        .search-box { display: flex; gap: 10px; margin-top: 15px; }
+        input[type="date"], input[type="month"] { padding: 10px; border-radius: 5px; border: 1px solid #ccc; }
+        .day-card { background: #fff; color: #333; padding: 20px; border-radius: 8px; margin-top: 15px; display: none; border-left: 8px solid var(--primary); }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th { background: var(--primary); color: white; padding: 12px; text-align: left; }
+        td { padding: 12px; border-bottom: 1px solid #eee; }
+        .badge { padding: 5px 10px; border-radius: 15px; color: white; font-weight: bold; font-size: 12px; text-transform: uppercase; display: inline-block; }
+        .ala-1 { background: var(--ala-d); } .ala-2 { background: var(--ala-a); } 
+        .ala-3 { background: var(--ala-b); } .ala-4 { background: var(--ala-c); color: #000; }
+        .status-online { color: #27ae60; font-size: 0.8em; font-weight: bold; }
+        .loading-msg { padding: 20px; text-align: center; color: #666; font-style: italic; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h2>Serviço de Escala 24h <span class="status-online">● Conectado à Planilha</span></h2>
+    </div>
+
+    <div class="search-panel">
+        <strong>🔎 CONSULTA RÁPIDA POR DIA</strong>
+        <div class="search-box">
+            <input type="date" id="targetDate">
+            <button onclick="consultarDia()" style="cursor:pointer; padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 5px;">Visualizar Escala</button>
+        </div>
+        <div id="dayCard" class="day-card">
+            <h3 id="cardDataText"></h3>
+            <div id="cardAlaBadge"></div>
+            <div id="cardStaff" style="margin-top: 15px;"></div>
+        </div>
+    </div>
+
+    <hr>
+
+    <h3>📅 Escala Mensal Completa</h3>
+    <input type="month" id="monthPicker">
+    
+    <table id="mainTable">
+        <thead>
+            <tr>
+                <th>Data</th>
+                <th>Ala</th>
+                <th>Efetivo de Serviço</th>
+                <th>Reforço</th>
+            </tr>
+        </thead>
+        <tbody id="scaleBody">
+            <tr><td colspan="4" class="loading-msg">Carregando dados...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+    // 1. CONFIGURAÇÕES
+    const SHEET_ID = '171yY1_bP_KNg9JSUEjz0B4oXuxuB97KMTQMSXxkJS9U';
+    const REFERENCE_DATE = new Date(2026, 0, 1); 
+    const ALAS_NOMES = ['ALA 2', 'ALA 3', 'ALA 4', 'ALA 1'];
+    
+    // 2. ESTADO GLOBAL
+    let efetivoFixos = { 'ALA 1': [], 'ALA 2': [], 'ALA 3': [], 'ALA 4': [] };
+
+    // 3. FUNÇÕES DE LÓGICA
+    function getAlaByDate(date) {
+        const d1 = new Date(REFERENCE_DATE).setHours(0,0,0,0);
+        const d2 = new Date(date).setHours(0,0,0,0);
+        const diffDays = Math.floor((d2 - d1) / (1000 * 60 * 60 * 24));
+        const idx = ((diffDays % 4) + 4) % 4;
+        return ALAS_NOMES[idx];
+    }
+
+    function renderScale() {
+        const picker = document.getElementById('monthPicker');
+        if(!picker.value) return;
+
+        const [year, month] = picker.value.split('-').map(Number);
+        const daysInMonth = new Date(year, month, 0).getDate();
+        const tbody = document.getElementById('scaleBody');
+        tbody.innerHTML = '';
+
+        for (let d = 1; d <= daysInMonth; d++) {
+            const curDate = new Date(year, month - 1, d);
+            const ala = getAlaByDate(curDate);
+            const alaClass = ala.toLowerCase().replace(' ', '-');
+            const equipe = (efetivoFixos[ala] && efetivoFixos[ala].length > 0) ? efetivoFixos[ala].join(', ') : "---";
+            
+            const row = `<tr>
+                <td>${d.toString().padStart(2,'0')}/${month.toString().padStart(2,'0')}</td>
+                <td><span class="badge ${alaClass}">${ala}</span></td>
+                <td style="font-size: 0.85em">${equipe}</td>
+                <td><input type="text" placeholder="..." style="border:none; border-bottom:1px dashed #ccc; width:90%"></td>
+            </tr>`;
+            tbody.innerHTML += row;
+        }
+    }
+
+    function consultarDia() {
+        const dateVal = document.getElementById('targetDate').value;
+        if(!dateVal) return alert("Selecione uma data");
+        
+        const date = new Date(dateVal + "T00:00:00");
+        const ala = getAlaByDate(date);
+        const alaClass = ala.toLowerCase().replace(' ', '-');
+        
+        document.getElementById('dayCard').style.display = 'block';
+        document.getElementById('cardDataText').innerText = date.toLocaleDateString('pt-BR', { dateStyle: 'full' });
+        document.getElementById('cardAlaBadge').innerHTML = `<span class="badge ${alaClass}">${ala}</span>`;
+        
+        const lista = (efetivoFixos[ala] && efetivoFixos[ala].length > 0) ? efetivoFixos[ala].join('<br>') : "Sem dados";
+        document.getElementById('cardStaff').innerHTML = `<strong>Equipe:</strong><br>${lista}`;
+    }
+
+    async function loadSheetData() {
+        const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=EFETIVO_FIXO`;
+        try {
+            const response = await fetch(url);
+            const text = await response.text();
+            const json = JSON.parse(text.substring(47).slice(0, -2));
+            const rows = json.table.rows;
+
+            // Reset
+            efetivoFixos = { 'ALA 1': [], 'ALA 2': [], 'ALA 3': [], 'ALA 4': [] };
+
+            rows.forEach(row => {
+                const nome = (row.c && row.c[0]) ? row.c[0].v : null;
+                const rg = (row.c && row.c[1]) ? row.c[1].v : '';
+                const alaRaw = (row.c && row.c[2]) ? row.c[2].v : null;
+
+                if (nome && alaRaw) {
+                    const ala = alaRaw.toString().toUpperCase().trim();
+                    if (efetivoFixos[ala]) {
+                        efetivoFixos[ala].push(`${nome} (RG ${rg})`);
+                    }
+                }
+            });
+
+            renderScale();
+        } catch (e) {
+            console.error(e);
+            document.getElementById('scaleBody').innerHTML = '<tr><td colspan="4" style="color:red">Erro ao carregar dados. Verifique o compartilhamento da planilha.</td></tr>';
+        }
+    }
+
+    // 4. INICIALIZAÇÃO SEGURA
+    window.addEventListener('DOMContentLoaded', () => {
+        // Define o mês atual no picker
+        const now = new Date();
+        const monthVal = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2, '0')}`;
+        document.getElementById('monthPicker').value = monthVal;
+        
+        // Adiciona o evento via JS (mais seguro que no HTML)
+        document.getElementById('monthPicker').addEventListener('change', renderScale);
+        
+        // Carrega os dados
+        loadSheetData();
+    });
+</script>
+
+</body>
+</html>
